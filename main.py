@@ -1,4 +1,4 @@
-from wallhaven import *
+from WallHaven import *
 
 picture_path = '/home/moonwalker/Picture/WallHaven'
 
