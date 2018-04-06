@@ -2,6 +2,8 @@ import re
 import abc
 import unittest
 import logging
+import threading, time
+import requests
 from enum import Enum
 from urllib import request
 
@@ -13,35 +15,73 @@ class WallHaven:
     '''
 
     def __init__(self):
-        self.main_web = 'https://alpha.wallhaven.cc'
-        self.categories = { 'latest' : '/latest',
-                            'toplist' : '/toplist',
-                            'random' : '/random'
-                            }
-        self.opener = request.build_opener()
-        self.opener.addheaders = [('User-Agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' \
-                                                 ' (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36')]
+        self.categories = {'latest': '/latest',
+                           'toplist': '/toplist',
+                           'random': '/random'}
+        self.session = requests.session()
+        self.session.headers.update({'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' \
+                                                   ' (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36'})
+        self.index_url = 'https://alpha.wallhaven.cc'
 
     def get_main_web_pictures(self):
-        rsp = self.opener.open(self.main_web)
-        data = rsp.read().decode('utf-8')
-        rsp.close()
+        data = self.session.get(self.index_url).text
         patten = re.compile(r'<img src="//.*?th-(\d*?)\.\S{3}"')
         for match in patten.finditer(data):
-            yield WallHavenPicture(match.group(1))
+            yield self.create_picture(match.group(1))
 
     def get_category_picture(self, category, page=1):
         assert isinstance(category, Category)
-        url = self.main_web + self.categories[category.value] + '?' + str(page)
-        rsp = self.opener.open(url)
-        data = rsp.read().decode('utf-8')
-        rsp.close()
+        url = self.index_url + self.categories[category.value] + '?page=' + str(page)
+        data = self.session.get(url).text
         patten = re.compile(r'data-wallpaper-id="(\d*?)"')
         for match in patten.finditer(data):
-            yield WallHavenPicture(match.group(1))
+            yield self.create_picture(match.group(1))
+
+    def get_preview_data(self, id):
+        url = "https://alpha.wallhaven.cc/wallpapers/thumb/small/th-{}.jpg".format(id)
+        return self.session.get(url).content
+
+    def get_picture_info(self, id):
+        page_url = 'https://alpha.wallhaven.cc/wallpaper'
+        url = '{}/{}'.format(page_url, id)
+        data = self.session.get(url).text
+        patten = re.compile(r'<img id="wallpaper" src="(.*?)" alt="(.*?)"')
+        origin_url = 'https:' + patten.search(data).group(1)
+        alt = patten.search(data).group(2)
+        return origin_url, alt
+
+    def get_origin_data(self, id_or_pic):
+        if isinstance(id_or_pic, WallHavenPicture):
+            origin_url = id_or_pic.origin_url
+        else:
+            origin_url, alt = self.get_picture_info(id_or_pic)
+        rsp = self.session.get(origin_url, stream=True)
+        return rsp.iter_content(1024 * 1024), int(rsp.headers['Content-Length'])
+
+    def create_picture(self, id):
+        origin_url, alt = self.get_picture_info(id)
+        return WallHavenPicture(id, origin_url, alt)
+
+    def download_picture(self, id_or_pic, path):
+        if isinstance(id_or_pic, WallHavenPicture):
+            origin_url = id_or_pic.origin_url
+        else:
+            origin_url, alt = self.get_picture_info(id_or_pic)
+        if path.endswith('/'):
+            path = path[:-2]
+        file_name = origin_url[origin_url.rfind('/'):]
+        path = path + file_name
+        size = 0
+        with open(path, 'wb') as f:
+            block_iter, total_size = self.get_origin_data(id_or_pic)
+            for block in block_iter:
+                f.write(block)
+                size += len(block)
+                print("Download Picture {} {:.2f}%".format(path, 100.0 * size / total_size))
 
 
 class Category(Enum):
+    MAIN = 'main'
     LATEST = 'latest'
     TOPLIST = 'toplist'
     RANDOM = 'random'
@@ -74,65 +114,21 @@ class Picture:
         pass
 
 
-class WallHavenPicture(Picture):
+class WallHavenPicture():
     '''
     wallhaven壁纸类
     '''
-    def __init__(self, id):
-        super().__init__(id)
-        self.log = logging.getLogger('PictureClass')
-        self.log.setLevel(logging.DEBUG)
+
+    def __init__(self, id, origin_url=None, alt=None):
+        self.id = id
         self.__pre_url = 'https://alpha.wallhaven.cc/wallpaper'
         self.url = '{}/{}'.format(self.__pre_url, id)
-        self.headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' \
-                                      ' (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36'}
-        req = request.Request(self.url, headers=self.headers)
-        rsp = request.urlopen(req)
-        if rsp.status != 200:
-            raise Exception('fail to open {}, request return {}'.format(self.url, rsp.status))
-        data = rsp.read().decode('utf-8')
-        patten = re.compile(r'<img id="wallpaper" src="(.*?)" alt="(.*?)"')
-        self.origin_url = 'https:' + patten.search(data).group(1)
-        self.alt = patten.search(data).group(2)
-
-    def download_picture(self, path):
-        if path.endswith('/'):
-            path = path[:-2]
-        file_name = path + self.origin_url[self.origin_url.rfind('/'):]
-        with open(file_name, 'wb') as f:
-            for block in self.get_origin_data():
-                f.write(block)
-
-    def get_preview_url(self):
-        return "https://alpha.wallhaven.cc/wallpapers/thumb/small/th-{}.jpg".format(self.id)
-
-    def get_preview_data(self):
-        url = self.get_preview_url()
-        req = request.Request(url, headers=self.headers)
-        rsp = request.urlopen(req)
-        return rsp.read()
-
-    def get_origin_url(self):
-        return self.origin_url
-
-    def get_origin_data(self):
-        file_name = self.origin_url[self.origin_url.rfind('/'):]
-        req = request.Request(self.origin_url, headers=self.headers)
-        rsp = request.urlopen(req)
-
-        if rsp.code == 200:
-            size = rsp.length
-            size_count = 0
-            while True:
-                block = rsp.read(1024 * 1024)
-                block_size = len(block)
-                if not block:
-                    break
-                yield block
-                size_count += block_size
-                self.log.debug('Downloading {} {:.2f}%'.format(file_name, 100.0 * size_count / size))
+        self.origin_url = origin_url
+        self.alt = alt
 
     def get_resolution(self):
+        if not self.alt:
+            return None
         resolution = self.alt.split()[1]
         width = int(resolution.split('x')[0])
         height = int(resolution.split('x')[1])
@@ -147,7 +143,7 @@ class PictureTest(unittest.TestCase):
         self.wallhaven = WallHaven()
 
     def test_pincture_create(self):
-        pic = WallHavenPicture(632744)
+        pic = self.wallhaven.create_picture(632744)
         self.assertEqual(pic.url, 'https://alpha.wallhaven.cc/wallpaper/632744')
         self.assertEqual(pic.origin_url, 'https://wallpapers.wallhaven.cc/wallpapers/full/wallhaven-632744.jpg')
         self.assertEqual(pic.alt, 'General 4096x2304 landscape horizon clouds sunrise mountain top Switzerland Saentis Mountain mountains sun rays sky HDR')
@@ -155,8 +151,8 @@ class PictureTest(unittest.TestCase):
 
     def test_picture_download(self):
         print('test picture_download')
-        pic = WallHavenPicture(632744)
-        pic.download_picture("/home/moonwalker/Picture")
+        pic = self.wallhaven.create_picture(632744)
+        self.wallhaven.download_picture(pic, "/home/moonwalker/Picture")
 
     def test_get_main_web_picture(self):
         for p in self.wallhaven.get_main_web_pictures():
