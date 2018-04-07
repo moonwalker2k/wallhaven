@@ -1,7 +1,8 @@
 import sys
 import threading
 import time
-from WallHaven import WallHaven, WallHavenPicture, Category
+from PreviewWindow import PreviewWindow
+from WallHaven import WallHaven, Category, WallHavenPicture
 from collections import OrderedDict
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QApplication, QWidget, QDesktopWidget
@@ -16,11 +17,12 @@ class MainGui(QWidget):
         super().__init__()
         self.setWindowTitle('WallHaven')
         self.setWindowIcon(QIcon('src/logo.png'))
-        # self.setFixedSize(1280, 720)
-        self.setMinimumSize(1330, 720)
         self.setLayout(QtWidgets.QHBoxLayout(self))
+        # self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.layout().setSpacing(0)
+        self.setMinimumSize(1300, 650)
         self.tabs_widget = PreviewTabs(self)
-        self.init_preview_tabs()
+        self.preview_tabs_init()
         self.move_to_center()
         self.show()
 
@@ -30,7 +32,7 @@ class MainGui(QWidget):
         fg.moveCenter(screen_center)
         self.move(fg.topLeft())
 
-    def init_preview_tabs(self):
+    def preview_tabs_init(self):
         self.layout().addWidget(self.tabs_widget)
 
 
@@ -38,8 +40,10 @@ class PreviewTabs(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
         self.wh = WallHaven()
         self.setLayout(QtWidgets.QVBoxLayout(self))
+        self.layout().setSpacing(1)
         self.tabs = QtWidgets.QTabWidget()
 
         self.main_tab = QWidget()
@@ -54,30 +58,41 @@ class PreviewTabs(QWidget):
         self.updaters_list = []
         for i in range(4):
             self.updaters_list.append(TabUpdater())
+
+        self.preview_window = PreviewWindow()
+
         self.init_all_tabs()
+        self.init_preview_window()
+        self.update_all_tabs()
 
     def init_all_tabs(self):
         for tab, category in zip(self.all_tabs, Category):
-            tab.setLayout(QtWidgets.QGridLayout())
+            grid_layout = QtWidgets.QGridLayout()
+            grid_layout.setSpacing(4)
+            tab.setLayout(grid_layout)
             scroll_area = QtWidgets.QScrollArea()
             scroll_area.setWidget(tab)
             scroll_area.setWidgetResizable(True)
             self.tabs.addTab(scroll_area, category.value)
 
-        def add_label_to_tab(tab, num):
-            for i in range(num):
-                label = PictureLabel()
-                label.setText("None")
-                label.setFixedSize(300, 200)
-                label.setMargin(2)
-                tab.layout().addWidget(label, int(i / 4), i % 4)
-
-        add_label_to_tab(self.main_tab, 19)
+        self.add_label_to_tab(self.main_tab, 19)
         for tab in self.all_tabs[1:]:
-            add_label_to_tab(tab, 24)
+            self.add_label_to_tab(tab, 24)
+
+        for tab in self.all_tabs:
+            tab.setStyleSheet('PictureLabel '
+                              '{background-color: yellow;'
+                              'border-width: 2px;'
+                              'border-radius: 10px;'
+                              '}')
 
         self.layout().addWidget(self.tabs)
 
+    def init_preview_window(self):
+        self.preview_window.hide()
+        self.preview_window.setWindowModality(QtCore.Qt.ApplicationModal)
+
+    def update_all_tabs(self):
         for updater, category in zip(self.updaters_list, Category):
             updater.update_signal.connect(self.update_tab_slot)
             updater.start()
@@ -88,15 +103,33 @@ class PreviewTabs(QWidget):
         self.tab_updater.update_signal.connect(self.update_tab_slot)
         self.tab_updater.update_tab(category, page)
 
-    @pyqtSlot(int, Category, QPixmap)
-    def update_tab_slot(self, count, category, pixmap):
+
+    def add_label_to_tab(self, tab, num):
+        for i in range(num):
+            label = PictureLabel()
+            label.setText("None")
+            # label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored)
+            label.setFixedSize(300, 200)
+            label.setMargin(0)
+            label.setContentsMargins(0,0,0,0)
+            label.clicked.connect(self.preview_clicked_slot)
+            tab.layout().addWidget(label, int(i / 4), i % 4)
+
+    @QtCore.pyqtSlot(WallHavenPicture, int, Category, QPixmap)
+    def update_tab_slot(self, id, count, category, pixmap):
         label = self.all_tabs_dict[category.value].layout().itemAt(count).widget()
-        label.setPixmap(pixmap)
+        label.set_picture(id, pixmap)
+
+    @QtCore.pyqtSlot(WallHavenPicture)
+    def preview_clicked_slot(self, picture):
+        print('preview signal get')
+        self.preview_window.show()
+        self.preview_window.load_picture(picture)
 
 
 class TabUpdater(QThread):
 
-    update_signal = QtCore.pyqtSignal(int, Category, QPixmap)
+    update_signal = QtCore.pyqtSignal(WallHavenPicture, int, Category, QPixmap)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -117,11 +150,13 @@ class TabUpdater(QThread):
         self.__update_category_page = page
         self.__updating = True
         self.__wait_condition.wakeAll()
+        print('start update tab')
         self.__mutex.unlock()
 
     def stop_update(self):
         self.__mutex.lock()
         self.__updating = False
+        self.__wait_condition.wakeAll()
         self.__mutex.unlock()
 
     def get_pixmap(self):
@@ -136,6 +171,8 @@ class TabUpdater(QThread):
             if not self.__updating:
                 print("TabUpdater watting")
                 self.__wait_condition.wait(self.__mutex)
+                self.__mutex.unlock()
+                continue
             self.__mutex.unlock()
             count = 0
             if self.__update_category == Category.MAIN:
@@ -143,16 +180,13 @@ class TabUpdater(QThread):
             else:
                 pic_iter = self.__wh.get_category_picture(self.__update_category, self.__update_category_page)
             for pic in pic_iter:
-                start_time = time.time()
                 if not self.__updating:
                     break
                 self.__mutex.lock()
                 self.__pixmap.loadFromData(QByteArray(self.__wh.get_preview_data(pic.id)))
-                self.update_signal.emit(count, self.__update_category, QPixmap(self.__pixmap))
+                self.update_signal.emit(pic, count, self.__update_category, QPixmap(self.__pixmap))
                 count += 1
                 self.__mutex.unlock()
-                stop_time = time.time()
-                print("updater elapsed time {:.3f}".format(stop_time - start_time))
             self.__updating = False
 
 

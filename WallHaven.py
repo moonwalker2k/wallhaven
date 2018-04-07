@@ -2,7 +2,7 @@ import re
 import abc
 import unittest
 import logging
-import threading, time
+from PyQt5 import QtCore
 import requests
 from enum import Enum
 from urllib import request
@@ -46,7 +46,10 @@ class WallHaven:
         url = '{}/{}'.format(page_url, id)
         data = self.session.get(url).text
         patten = re.compile(r'<img id="wallpaper" src="(.*?)" alt="(.*?)"')
-        origin_url = 'https:' + patten.search(data).group(1)
+        try:
+            origin_url = 'https:' + patten.search(data).group(1)
+        except AttributeError as e:
+            print('error when get picture info of id:{}, thread {}'.format(id), QtCore.QThread.currentThreadId())
         alt = patten.search(data).group(2)
         return origin_url, alt
 

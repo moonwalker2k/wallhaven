@@ -1,19 +1,28 @@
 from WallHaven import Picture
-from PyQt5.QtWidgets import QLabel
-from PyQt5.QtGui import QPixmap, QPicture
-from PyQt5.QtCore import QByteArray
+from PyQt5 import QtWidgets, QtCore, QtGui
+from WallHaven import WallHavenPicture
 
 
-class PictureLabel(QLabel):
+class PictureLabel(QtWidgets.QLabel):
 
-    def __init__(self, parent=None):
+    clicked = QtCore.pyqtSignal(WallHavenPicture)
+
+    def __init__(self, parent=None, picture=None):
         super().__init__(parent)
+        self.picture = picture
+        # self.clicked.connect(self.test_slot)
 
-    def set_picture(self, picture):
-        assert isinstance(picture, Picture)
-        data = picture.get_preview_data()
-        pixmap = QPixmap()
-        loaded = pixmap.loadFromData(QByteArray(data))
-        if loaded:
-            print("Loaded!")
-            self.setPixmap(pixmap)
+    def set_picture(self, picture, pixmap):
+        self.picture = picture
+        self.setPixmap(pixmap)
+
+    def mousePressEvent(self, ev: QtGui.QMouseEvent):
+        if ev.buttons() == QtCore.Qt.LeftButton:
+            if self.picture:
+                print('preview signal emit')
+                self.clicked.emit(self.picture)
+            ev.accept()
+
+    @QtCore.pyqtSlot(WallHavenPicture)
+    def test_slot(self, picture):
+        print('signal get')
