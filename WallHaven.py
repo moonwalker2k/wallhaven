@@ -1,11 +1,9 @@
 import re
 import abc
 import unittest
-import logging
 from PyQt5 import QtCore
 import requests
 from enum import Enum
-from urllib import request
 
 
 class WallHaven:
@@ -44,13 +42,15 @@ class WallHaven:
     def get_picture_info(self, id):
         page_url = 'https://alpha.wallhaven.cc/wallpaper'
         url = '{}/{}'.format(page_url, id)
-        data = self.session.get(url).text
+        rsp = self.session.get(url)
+        data = rsp.text
         patten = re.compile(r'<img id="wallpaper" src="(.*?)" alt="(.*?)"')
         try:
             origin_url = 'https:' + patten.search(data).group(1)
+            alt = patten.search(data).group(2)
         except AttributeError as e:
-            print('error when get picture info of id:{}, thread {}'.format(id), QtCore.QThread.currentThreadId())
-        alt = patten.search(data).group(2)
+            print('error when get picture info of id:{}, respond code {}, reason {}, thread {}'.format(
+                id, QtCore.QThread.currentThreadId(), rsp.status_code, rsp.reason))
         return origin_url, alt
 
     def get_origin_data(self, id_or_pic):
@@ -59,7 +59,7 @@ class WallHaven:
         else:
             origin_url, alt = self.get_picture_info(id_or_pic)
         rsp = self.session.get(origin_url, stream=True)
-        return rsp.iter_content(1024 * 1024), int(rsp.headers['Content-Length'])
+        return rsp.iter_content(1024 * 256), int(rsp.headers['Content-Length'])
 
     def create_picture(self, id):
         origin_url, alt = self.get_picture_info(id)
