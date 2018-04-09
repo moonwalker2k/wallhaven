@@ -49,8 +49,8 @@ class WallHaven:
             origin_url = 'https:' + patten.search(data).group(1)
             alt = patten.search(data).group(2)
         except AttributeError as e:
-            print('error when get picture info of id:{}, respond code {}, reason {}, thread {}'.format(
-                id, QtCore.QThread.currentThreadId(), rsp.status_code, rsp.reason))
+            print('error when get picture info of id:{}, respond code {}, reason {}'.format(
+                id, rsp.status_code, rsp.reason))
         return origin_url, alt
 
     def get_origin_data(self, id_or_pic):

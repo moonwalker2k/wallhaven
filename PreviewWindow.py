@@ -24,7 +24,7 @@ class PreviewWindow(QtWidgets.QLabel):
         self.loader = PictureLoader()
         self.loader_thread = QtCore.QThread()
         self.pixmap = QtGui.QPixmap()
-        self.wallhaven_picture = None
+        self.picture = None
         self.mouse_press_pos = None
         self.init_ui()
         self.close_button_init()
@@ -41,7 +41,7 @@ class PreviewWindow(QtWidgets.QLabel):
         fg = self.frameGeometry()
         fg.moveCenter(screen_center_point)
         self.move(fg.topLeft())
-        self.setScaledContents(True)
+        # self.setScaledContents(True)
         self.setStyleSheet('Background-color: rgb(222, 222, 222, 100)')
         # self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
 
@@ -55,18 +55,20 @@ class PreviewWindow(QtWidgets.QLabel):
 
     def picture_loader_init(self):
         self.loader.moveToThread(self.loader_thread)
-        self.loader.load_part_complete_signal.connect(self.load_part_complete_slot)
+        self.loader.load_part_complete_signal.connect(self.load_picture_slot)
         self.loader_thread.finished.connect(self.loader.deleteLater)
         self.load_picture_signal.connect(self.loader.load_picture)
         self.loader_thread.start()
 
     def load_picture(self, picture):
         log.debug('load new picture id {}'.format(picture.id))
+        self.picture = picture
         self.show()
         self.load_picture_signal.emit(picture)
 
+
     @QtCore.pyqtSlot(QtGui.QPixmap)
-    def load_part_complete_slot(self, pixmap):
+    def load_picture_slot(self, pixmap):
         self.setPixmap(pixmap)
 
     @QtCore.pyqtSlot()
@@ -92,33 +94,41 @@ class PictureLoader(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.wh = WallHaven()
-        self.pixmap = QtGui.QPixmap()
-        self.picture = None
         self.mutex = QtCore.QMutex()
         self.is_running = False
+        self.preview_windows_size = QtCore.QSize(1600, 900)
+        self.pixmap = QtGui.QPixmap()
 
     @QtCore.pyqtSlot(WallHaven)
     def load_picture(self, picture):
         self.mutex.lock()
         self.is_running = True
         self.mutex.unlock()
-        self.picture = picture
         picture_data = bytearray()
-        size = 0
-        data_iter, total_size = self.wh.get_origin_data(self.picture)
+        data_size = 0
+        pixmap = QtGui.QPixmap(self.preview_windows_size)
+        data_iter, total_size = self.wh.get_origin_data(picture)
         log.debug('load picture {}, size {:.2f}KB'.format(picture.id, total_size / 1024))
         for block in data_iter:
             picture_data += block
-            size += len(block)
-            self.pixmap.loadFromData(picture_data)
-            self.load_part_complete_signal.emit(self.pixmap)
-            log.debug('load picture {} in {:.1f}%'.format(picture.id, 100.0 * size / total_size))
-            self.mutex.lock()
-            if not self.is_running:
-                self.mutex.unlock()
+            data_size += len(block)
+            if self.is_stopped():
                 break
-            self.mutex.unlock()
+            log.debug('load picture {} in {:.1f}%'.format(picture.id, 100.0 * data_size / total_size))
+            self.pixmap.loadFromData(picture_data)
+            self.pixmap = self.pixmap.scaled(self.preview_windows_size, QtCore.Qt.KeepAspectRatioByExpanding)
+            self.load_part_complete_signal.emit(self.pixmap)
         log.debug('stop load picture')
+
+    def is_stopped(self):
+        self.mutex.lock()
+        if not self.is_running:
+            self.mutex.unlock()
+            return True
+        else:
+            self.mutex.unlock()
+            return False
+
 
     def stop_loader(self):
         self.mutex.lock()
