@@ -10,7 +10,6 @@ class PictureLabel(QtWidgets.QLabel):
     def __init__(self, parent=None, picture=None):
         super().__init__(parent)
         self.picture = picture
-        # self.clicked.connect(self.test_slot)
 
     def set_picture(self, picture, pixmap):
         self.picture = picture
@@ -19,10 +18,5 @@ class PictureLabel(QtWidgets.QLabel):
     def mousePressEvent(self, ev: QtGui.QMouseEvent):
         if ev.buttons() == QtCore.Qt.LeftButton:
             if self.picture:
-                print('preview signal emit')
                 self.clicked.emit(self.picture)
             ev.accept()
-
-    @QtCore.pyqtSlot(WallHavenPicture)
-    def test_slot(self, picture):
-        print('signal get')

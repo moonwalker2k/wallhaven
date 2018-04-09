@@ -1,6 +1,5 @@
 import sys
-import threading
-import time
+import logging
 from PreviewWindow import PreviewWindow
 from WallHaven import WallHaven, Category, WallHavenPicture
 from collections import OrderedDict
@@ -9,6 +8,14 @@ from PyQt5.QtWidgets import QApplication, QWidget, QDesktopWidget
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtCore import pyqtSlot, QThread, QWaitCondition, QMutex, QByteArray
 from PictureLabel import PictureLabel
+
+
+log = logging.getLogger('MainGUILog')
+log.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s %(levelname)-4s: %(message)s')
+console_handler.setFormatter(formatter)
+log.addHandler(console_handler)
 
 
 class MainGui(QWidget):
@@ -38,6 +45,8 @@ class MainGui(QWidget):
 
 class PreviewTabs(QWidget):
 
+    update_tab_signal = QtCore.pyqtSignal(Category, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -57,7 +66,7 @@ class PreviewTabs(QWidget):
         self.tab_updater = TabUpdater()
         self.updaters_list = []
         for i in range(4):
-            self.updaters_list.append(TabUpdater())
+            self.updaters_list.append(TabUpdaterEvenType())
 
         self.preview_window = PreviewWindow()
 
@@ -81,7 +90,7 @@ class PreviewTabs(QWidget):
 
         for tab in self.all_tabs:
             tab.setStyleSheet('PictureLabel '
-                              '{background-color: yellow;'
+                              '{background-color: gray;'
                               'border-width: 2px;'
                               'border-radius: 10px;'
                               '}')
@@ -94,15 +103,11 @@ class PreviewTabs(QWidget):
 
     def update_all_tabs(self):
         for updater, category in zip(self.updaters_list, Category):
-            updater.update_signal.connect(self.update_tab_slot)
-            updater.start()
-            updater.update_tab(category)
-
-    def update_tab(self, category, page=1):
-        self.tab_updater.stop_update()
-        self.tab_updater.update_signal.connect(self.update_tab_slot)
-        self.tab_updater.update_tab(category, page)
-
+            assert isinstance(updater, TabUpdaterEvenType)
+            if category == Category.MAIN:
+                updater.thread.setPriority(QtCore.QThread.HighestPriority)
+            updater.updated_one_picture_signal.connect(self.update_tab_slot)
+            updater.accquire_update_tab(category)
 
     def add_label_to_tab(self, tab, num):
         for i in range(num):
@@ -116,15 +121,68 @@ class PreviewTabs(QWidget):
             tab.layout().addWidget(label, int(i / 4), i % 4)
 
     @QtCore.pyqtSlot(WallHavenPicture, int, Category, QPixmap)
-    def update_tab_slot(self, id, count, category, pixmap):
+    def update_tab_slot(self, picture, count, category, pixmap):
         label = self.all_tabs_dict[category.value].layout().itemAt(count).widget()
-        label.set_picture(id, pixmap)
+        label.set_picture(picture, pixmap)
 
     @QtCore.pyqtSlot(WallHavenPicture)
     def preview_clicked_slot(self, picture):
-        print('preview signal get')
         self.preview_window.show()
+        self.preview_window.setPixmap(QPixmap())
         self.preview_window.load_picture(picture)
+
+
+class TabUpdaterEvenType(QtCore.QObject):
+
+    update_tab_signal = QtCore.pyqtSignal(Category, int)
+
+    updated_one_picture_signal = QtCore.pyqtSignal(WallHavenPicture, int, Category, QPixmap)
+
+    def __init__(self, wh=WallHaven()):
+        super().__init__()
+        self.wh = wh
+        self.pixmap = QtGui.QPixmap()
+        self.is_running = False
+        self.mutex = QtCore.QMutex()
+        self.thread = QtCore.QThread()
+        self.update_tab_signal.connect(self.update_tab)
+        self.moveToThread(self.thread)
+        self.thread.start()
+
+    @pyqtSlot(Category, int)
+    def update_tab(self, category, page=1):
+        assert isinstance(category, Category)
+        if category == Category.MAIN:
+            picture_iter = self.wh.get_main_web_pictures()
+        else:
+            picture_iter = self.wh.get_category_picture(category, page)
+        count = 0
+        for pic in picture_iter:
+            self.pixmap.loadFromData(self.wh.get_preview_data(pic.id))
+            self.updated_one_picture_signal.emit(pic, count, category, self.pixmap)
+            count += 1
+            log.debug('update tab:{} picture:{}'.format(category.value, pic.id))
+            self.mutex.lock()
+            if not self.is_running:
+                self.mutex.unlock()
+                break
+            self.mutex.unlock()
+        log.debug('updater stop')
+
+    def stop_update(self):
+        self.mutex.lock()
+        self.is_running = False
+        self.mutex.unlock()
+
+    def accquire_update_tab(self, category, page=1):
+        self.mutex.lock()
+        self.is_running = True
+        self.mutex.unlock()
+        self.update_tab_signal.emit(category, page)
+
+
+
+
 
 
 class TabUpdater(QThread):
@@ -150,7 +208,6 @@ class TabUpdater(QThread):
         self.__update_category_page = page
         self.__updating = True
         self.__wait_condition.wakeAll()
-        print('start update tab')
         self.__mutex.unlock()
 
     def stop_update(self):
@@ -169,7 +226,7 @@ class TabUpdater(QThread):
         while True:
             self.__mutex.lock()
             if not self.__updating:
-                print("TabUpdater watting")
+                log.debug("TabUpdater watting")
                 self.__wait_condition.wait(self.__mutex)
                 self.__mutex.unlock()
                 continue

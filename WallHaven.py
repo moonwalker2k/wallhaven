@@ -59,7 +59,7 @@ class WallHaven:
         else:
             origin_url, alt = self.get_picture_info(id_or_pic)
         rsp = self.session.get(origin_url, stream=True)
-        return rsp.iter_content(1024 * 256), int(rsp.headers['Content-Length'])
+        return rsp.iter_content(1024 * 128), int(rsp.headers['Content-Length'])
 
     def create_picture(self, id):
         origin_url, alt = self.get_picture_info(id)

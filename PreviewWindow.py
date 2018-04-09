@@ -1,30 +1,38 @@
 import sys
-import threading
+import logging
 from WallHaven import WallHaven
 from PyQt5 import QtWidgets, QtCore, QtGui
 from WallHaven import WallHavenPicture
 
 
+log = logging.getLogger('PreviewWindowLog')
+log.setLevel(logging.DEBUG)
+console_handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter('%(asctime)s %(levelname)-4s: %(message)s')
+console_handler.setFormatter(formatter)
+log.addHandler(console_handler)
+
+
 class PreviewWindow(QtWidgets.QLabel):
 
-    refresh_picture_signal = QtCore.pyqtSignal(str)
     stop_loader_signal = QtCore.pyqtSignal()
     load_picture_signal = QtCore.pyqtSignal(WallHavenPicture)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.picture_label = QtWidgets.QLabel(self)
         self.close_button = QtWidgets.QPushButton(self)
-        self.wh = WallHaven()
         self.loader = PictureLoader()
+        self.loader_thread = QtCore.QThread()
         self.pixmap = QtGui.QPixmap()
         self.wallhaven_picture = None
         self.mouse_press_pos = None
-        self.picture_data = bytearray()
         self.init_ui()
         self.close_button_init()
         self.picture_loader_init()
-        self.loader.start()
+
+    def __del__(self):
+        self.loader_thread.quit()
+        self.loader_thread.wait()
 
     def init_ui(self):
         self.setWindowFlags(QtCore.Qt.BypassWindowManagerHint)
@@ -46,24 +54,25 @@ class PreviewWindow(QtWidgets.QLabel):
         self.close_button.setWindowOpacity(1)
 
     def picture_loader_init(self):
-        self.loader.loaded_parted_complete_signal.connect(self.load_parted_complete_slot)
-        self.stop_loader_signal.connect(self.loader.stop_load_slot, QtCore.Qt.QueuedConnection)
-        self.load_picture_signal.connect(self.loader.load_picture_slot, QtCore.Qt.QueuedConnection)
+        self.loader.moveToThread(self.loader_thread)
+        self.loader.load_part_complete_signal.connect(self.load_part_complete_slot)
+        self.loader_thread.finished.connect(self.loader.deleteLater)
+        self.load_picture_signal.connect(self.loader.load_picture)
+        self.loader_thread.start()
 
     def load_picture(self, picture):
-        print('load noew picture')
+        log.debug('load new picture id {}'.format(picture.id))
         self.show()
         self.load_picture_signal.emit(picture)
 
     @QtCore.pyqtSlot(QtGui.QPixmap)
-    def load_parted_complete_slot(self, pixmap):
-        print('set parted pixmap')
+    def load_part_complete_slot(self, pixmap):
         self.setPixmap(pixmap)
 
     @QtCore.pyqtSlot()
     def preview_window_close_slot(self):
         self.hide()
-        self.stop_loader_signal.emit()
+        self.loader.stop_loader()
 
     def mousePressEvent(self, a0: QtGui.QMouseEvent):
         if a0.button()  == QtCore.Qt.LeftButton:
@@ -76,67 +85,46 @@ class PreviewWindow(QtWidgets.QLabel):
             a0.ignore()
 
 
-class PictureLoader(QtCore.QThread):
+class PictureLoader(QtCore.QObject):
 
-    loaded_parted_complete_signal = QtCore.pyqtSignal(QtGui.QPixmap)
+    load_part_complete_signal = QtCore.pyqtSignal(QtGui.QPixmap)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self):
+        super().__init__()
         self.wh = WallHaven()
-        self.loading = False
-        self.picture = None
         self.pixmap = QtGui.QPixmap()
-        self.picture_data = bytearray()
+        self.picture = None
         self.mutex = QtCore.QMutex()
-        self.wait_condition = QtCore.QWaitCondition()
+        self.is_running = False
 
-    @QtCore.pyqtSlot()
-    def stop_load_slot(self):
+    @QtCore.pyqtSlot(WallHaven)
+    def load_picture(self, picture):
         self.mutex.lock()
-        self.loading = False
-        self.wait_condition.wakeAll()
+        self.is_running = True
         self.mutex.unlock()
-
-    @QtCore.pyqtSlot(WallHavenPicture)
-    def load_picture_slot(self, picture):
-        self.mutex.lock()
-        if self.picture == picture:
-            self.mutex.unlock()
-            return
         self.picture = picture
-        self.loading = True
-        self.wait_condition.wakeAll()
-        self.mutex.unlock()
-
-    def run(self):
-        while True:
+        picture_data = bytearray()
+        size = 0
+        data_iter, total_size = self.wh.get_origin_data(self.picture)
+        log.debug('load picture {}, size {:.2f}KB'.format(picture.id, total_size / 1024))
+        for block in data_iter:
+            picture_data += block
+            size += len(block)
+            self.pixmap.loadFromData(picture_data)
+            self.load_part_complete_signal.emit(self.pixmap)
+            log.debug('load picture {} in {:.1f}%'.format(picture.id, 100.0 * size / total_size))
             self.mutex.lock()
-            if not self.loading:
-                print('loader watting....')
-                self.wait_condition.wait(self.mutex)
+            if not self.is_running:
                 self.mutex.unlock()
-                continue
+                break
             self.mutex.unlock()
-            print('loader start to work')
-            data_iter, size = self.wh.get_origin_data(self.picture)
-            print('size {:.2f}KB'.format(size / 1024))
-            self.picture_data.clear()
-            count = 0
-            for part in data_iter:
-                self.mutex.lock()
-                if not self.loading:
-                    break
-                count += 1
-                print('loading part {}'.format(count))
-                self.picture_data += part
-                # print('load to image result:', self.image.loadFromData(self.picture_data))
-                print('part pixmap load result:', self.pixmap.loadFromData(self.picture_data))
-                self.loaded_parted_complete_signal.emit(self.pixmap)
-                self.mutex.unlock()
-            # print('load picture result:', self.pixmap.loadFromData(self.picture_data))
-            # self.loaded_complete_signal.emit(self.pixmap)
-            print('load complete')
-            self.loading = False
+        log.debug('stop load picture')
+
+    def stop_loader(self):
+        self.mutex.lock()
+        self.is_running = False
+        self.mutex.unlock()
+        log.debug('stop loader')
 
 
 if __name__ == '__main__':
