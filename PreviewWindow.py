@@ -1,9 +1,9 @@
-import sys
+import sys, os
 import logging
+import pathlib
 from WallHaven import WallHaven
 from PyQt5 import QtWidgets, QtCore, QtGui
 from WallHaven import WallHavenPicture
-
 
 log = logging.getLogger('PreviewWindowLog')
 log.setLevel(logging.DEBUG)
@@ -12,27 +12,27 @@ formatter = logging.Formatter('%(asctime)s %(levelname)-4s: %(message)s')
 console_handler.setFormatter(formatter)
 log.addHandler(console_handler)
 
+setting = QtCore.QSettings('./setting.ini', QtCore.QSettings.IniFormat)
+
 
 class PreviewWindow(QtWidgets.QLabel):
 
     stop_loader_signal = QtCore.pyqtSignal()
     load_picture_signal = QtCore.pyqtSignal(WallHavenPicture)
+    download_picture_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.close_button = QtWidgets.QPushButton(self)
+        self.download_button = QtWidgets.QPushButton(self)
         self.loader = PictureLoader()
-        self.loader_thread = QtCore.QThread()
         self.pixmap = QtGui.QPixmap()
         self.picture = None
         self.mouse_press_pos = None
         self.init_ui()
-        self.close_button_init()
-        self.picture_loader_init()
-
-    def __del__(self):
-        self.loader_thread.quit()
-        self.loader_thread.wait()
+        self.init_close_button()
+        self.init_download_button()
+        self.init_picture_loader()
 
     def init_ui(self):
         self.setWindowFlags(QtCore.Qt.BypassWindowManagerHint)
@@ -45,7 +45,7 @@ class PreviewWindow(QtWidgets.QLabel):
         self.setStyleSheet('Background-color: rgb(222, 222, 222, 100)')
         # self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
 
-    def close_button_init(self):
+    def init_close_button(self):
         self.close_button.setText('Close')
         self.close_button.setGeometry(self.rect().width() - 40, 0, 40, 40)
         self.close_button.clicked.connect(self.preview_window_close_slot)
@@ -53,19 +53,21 @@ class PreviewWindow(QtWidgets.QLabel):
                                         'border-radius: 20px')
         self.close_button.setWindowOpacity(1)
 
-    def picture_loader_init(self):
-        self.loader.moveToThread(self.loader_thread)
+    def init_picture_loader(self):
         self.loader.load_part_complete_signal.connect(self.load_picture_slot)
-        self.loader_thread.finished.connect(self.loader.deleteLater)
         self.load_picture_signal.connect(self.loader.load_picture)
-        self.loader_thread.start()
+
+    def init_download_button(self):
+        self.download_button.setText('下载壁纸')
+        self.download_button.setGeometry(int(self.rect().width() / 2 - 50), self.height() - 50, 100, 40)
+        self.download_picture_signal.connect(self.loader.download_picture)
+        self.download_button.clicked.connect(self.download_picture_slot)
 
     def load_picture(self, picture):
         log.debug('load new picture id {}'.format(picture.id))
         self.picture = picture
         self.show()
         self.load_picture_signal.emit(picture)
-
 
     @QtCore.pyqtSlot(QtGui.QPixmap)
     def load_picture_slot(self, pixmap):
@@ -75,6 +77,11 @@ class PreviewWindow(QtWidgets.QLabel):
     def preview_window_close_slot(self):
         self.hide()
         self.loader.stop_loader()
+
+    @QtCore.pyqtSlot()
+    def download_picture_slot(self):
+        log.info('download picture:' + self.picture.id)
+        self.download_picture_signal.emit(setting.value('download_path'))
 
     def mousePressEvent(self, a0: QtGui.QMouseEvent):
         if a0.button()  == QtCore.Qt.LeftButton:
@@ -90,23 +97,30 @@ class PreviewWindow(QtWidgets.QLabel):
 class PictureLoader(QtCore.QObject):
 
     load_part_complete_signal = QtCore.pyqtSignal(QtGui.QPixmap)
+    progress_signal = QtCore.pyqtSignal(float)
 
     def __init__(self):
         super().__init__()
         self.wh = WallHaven()
         self.mutex = QtCore.QMutex()
         self.is_running = False
+        self.is_complete = False
         self.preview_windows_size = QtCore.QSize(1600, 900)
+        self.picture = None
         self.pixmap = QtGui.QPixmap()
+        self.loader_thread = QtCore.QThread()
+        self.moveToThread(self.loader_thread)
+        self.loader_thread.start()
 
-    @QtCore.pyqtSlot(WallHaven)
+    @QtCore.pyqtSlot(WallHavenPicture)
     def load_picture(self, picture):
         self.mutex.lock()
+        self.is_complete = False
         self.is_running = True
         self.mutex.unlock()
+        self.picture = picture
         picture_data = bytearray()
         data_size = 0
-        pixmap = QtGui.QPixmap(self.preview_windows_size)
         data_iter, total_size = self.wh.get_origin_data(picture)
         log.debug('load picture {}, size {:.2f}KB'.format(picture.id, total_size / 1024))
         for block in data_iter:
@@ -114,21 +128,38 @@ class PictureLoader(QtCore.QObject):
             data_size += len(block)
             if self.is_stopped():
                 break
-            log.debug('load picture {} in {:.1f}%'.format(picture.id, 100.0 * data_size / total_size))
+            progress = 100.0 * data_size / total_size
+            log.debug('load picture {} in {:.1f}%'.format(picture.id, progress))
+            if progress == 100.0:
+                self.is_complete = True
+            self.progress_signal.emit(progress)
             self.pixmap.loadFromData(picture_data)
             self.pixmap = self.pixmap.scaled(self.preview_windows_size, QtCore.Qt.KeepAspectRatioByExpanding)
             self.load_part_complete_signal.emit(self.pixmap)
         log.debug('stop load picture')
 
+    @QtCore.pyqtSlot(str)
+    def download_picture(self, path):
+        if self.picture.origin_url:
+            filename = self.picture.origin_url[self.picture.origin_url.rfind('/') + 1:]
+        else:
+            origin_url, = self.wh.get_picture_info(self.picture.id)
+            filename = origin_url[origin_url.rfind('/') + 1:]
+        log.info('old path' + path)
+        path = os.path.join(path, filename)
+        log.info('start download picture, path:' + path)
+
+        if self.is_complete:
+            self.pixmap.save(path)
+        else:
+            self.wh.download_picture(self.picture, path)
+        log.info('finish download')
+
     def is_stopped(self):
         self.mutex.lock()
-        if not self.is_running:
-            self.mutex.unlock()
-            return True
-        else:
-            self.mutex.unlock()
-            return False
-
+        status = not self.is_running
+        self.mutex.unlock()
+        return status
 
     def stop_loader(self):
         self.mutex.lock()

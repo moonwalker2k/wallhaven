@@ -11,6 +11,9 @@ class PictureLabel(QtWidgets.QLabel):
         super().__init__(parent)
         self.picture = picture
 
+    def clear_picture(self):
+        self.setPixmap(QtGui.QPixmap())
+
     def set_picture(self, picture, pixmap):
         self.picture = picture
         self.setPixmap(pixmap)

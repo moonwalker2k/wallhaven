@@ -1,6 +1,7 @@
 import re
 import abc
 import unittest
+import os
 from PyQt5 import QtCore
 import requests
 from enum import Enum
@@ -70,10 +71,8 @@ class WallHaven:
             origin_url = id_or_pic.origin_url
         else:
             origin_url, alt = self.get_picture_info(id_or_pic)
-        if path.endswith('/'):
-            path = path[:-2]
-        file_name = origin_url[origin_url.rfind('/'):]
-        path = path + file_name
+        file_name = origin_url[origin_url.rfind('/') + 1:]
+        path = os.path.join(path, file_name)
         size = 0
         with open(path, 'wb') as f:
             block_iter, total_size = self.get_origin_data(id_or_pic)
@@ -81,6 +80,7 @@ class WallHaven:
                 f.write(block)
                 size += len(block)
                 print("Download Picture {} {:.2f}%".format(path, 100.0 * size / total_size))
+
 
 
 class Category(Enum):
