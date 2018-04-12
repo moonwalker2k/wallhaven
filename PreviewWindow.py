@@ -35,7 +35,7 @@ class PreviewWindow(QtWidgets.QLabel):
         self.init_picture_loader()
 
     def init_ui(self):
-        self.setWindowFlags(QtCore.Qt.BypassWindowManagerHint)
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
         screen_center_point = QtWidgets.QDesktopWidget().availableGeometry().center()
         self.setGeometry(0, 0, 1600, 900)
         fg = self.frameGeometry()
@@ -109,8 +109,14 @@ class PictureLoader(QtCore.QObject):
         self.picture = None
         self.pixmap = QtGui.QPixmap()
         self.loader_thread = QtCore.QThread()
+        self.thread().finished.connect(self.deleteLater)
         self.moveToThread(self.loader_thread)
         self.loader_thread.start()
+
+    def __del__(self):
+        self.thread().quit()
+        self.thread().wait()
+
 
     @QtCore.pyqtSlot(WallHavenPicture)
     def load_picture(self, picture):

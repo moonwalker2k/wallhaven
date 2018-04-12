@@ -4,6 +4,7 @@ import unittest
 import os
 from PyQt5 import QtCore
 import requests
+from functools import lru_cache
 from enum import Enum
 
 
@@ -82,7 +83,6 @@ class WallHaven:
                 print("Download Picture {} {:.2f}%".format(path, 100.0 * size / total_size))
 
 
-
 class Category(Enum):
     MAIN = 'main'
     LATEST = 'latest'
@@ -128,6 +128,8 @@ class WallHavenPicture():
         self.url = '{}/{}'.format(self.__pre_url, id)
         self.origin_url = origin_url
         self.alt = alt
+        self.preview = None
+        self.origin = None
 
     def get_resolution(self):
         if not self.alt:
@@ -136,6 +138,12 @@ class WallHavenPicture():
         width = int(resolution.split('x')[0])
         height = int(resolution.split('x')[1])
         return width, height
+
+    def get_preview(self, wh):
+        return self.preview
+
+    def get_origin(self):
+        return self.origin
 
     resolution = property(get_resolution)
 
