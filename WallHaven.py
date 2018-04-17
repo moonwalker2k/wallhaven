@@ -6,6 +6,9 @@ from PyQt5 import QtCore
 import requests
 from functools import lru_cache
 from enum import Enum
+from collections import namedtuple
+
+WallHavenPicture = namedtuple('WallHavenPicture', 'id resolution alt origin_url')
 
 
 class WallHaven:
@@ -23,11 +26,14 @@ class WallHaven:
                                                    ' (KHTML, like Gecko) Chrome/65.0.3325.181 Safari/537.36'})
         self.index_url = 'https://alpha.wallhaven.cc'
 
+    def __del__(self):
+        self.session.close()
+
     def get_main_web_pictures(self):
         data = self.session.get(self.index_url).text
         patten = re.compile(r'<img src="//.*?th-(\d*?)\.\S{3}"')
         for match in patten.finditer(data):
-            yield self.create_picture(match.group(1))
+            yield match.group(1)
 
     def get_category_picture(self, category, page=1):
         assert isinstance(category, Category)
@@ -35,7 +41,7 @@ class WallHaven:
         data = self.session.get(url).text
         patten = re.compile(r'data-wallpaper-id="(\d*?)"')
         for match in patten.finditer(data):
-            yield self.create_picture(match.group(1))
+            yield match.group(1)
 
     def get_preview_data(self, id):
         url = "https://alpha.wallhaven.cc/wallpapers/thumb/small/th-{}.jpg".format(id)
@@ -65,7 +71,8 @@ class WallHaven:
 
     def create_picture(self, id):
         origin_url, alt = self.get_picture_info(id)
-        return WallHavenPicture(id, origin_url, alt)
+        resolution = tuple([int(s) for s in alt.split()[1].split('x')])
+        return WallHavenPicture(id, resolution, alt, origin_url)
 
     def download_picture(self, id_or_pic, path):
         if isinstance(id_or_pic, WallHavenPicture):
@@ -90,64 +97,6 @@ class Category(Enum):
     RANDOM = 'random'
 
 
-class Picture:
-    __metaclass__ = abc.ABCMeta
-
-    def __init__(self, id):
-        self.id = str(id)
-
-    @abc.abstractmethod
-    def download_picture(self, path):
-        pass
-
-    @abc.abstractmethod
-    def get_preview_url(self):
-        pass
-
-    @abc.abstractmethod
-    def get_origin_url(self):
-        pass
-
-    @abc.abstractmethod
-    def get_preview_data(self):
-        pass
-
-    @abc.abstractmethod
-    def get_origin_data(self):
-        pass
-
-
-class WallHavenPicture():
-    '''
-    wallhaven壁纸类
-    '''
-
-    def __init__(self, id, origin_url=None, alt=None):
-        self.id = id
-        self.__pre_url = 'https://alpha.wallhaven.cc/wallpaper'
-        self.url = '{}/{}'.format(self.__pre_url, id)
-        self.origin_url = origin_url
-        self.alt = alt
-        self.preview = None
-        self.origin = None
-
-    def get_resolution(self):
-        if not self.alt:
-            return None
-        resolution = self.alt.split()[1]
-        width = int(resolution.split('x')[0])
-        height = int(resolution.split('x')[1])
-        return width, height
-
-    def get_preview(self, wh):
-        return self.preview
-
-    def get_origin(self):
-        return self.origin
-
-    resolution = property(get_resolution)
-
-
 class PictureTest(unittest.TestCase):
 
     def setUp(self):
@@ -155,7 +104,6 @@ class PictureTest(unittest.TestCase):
 
     def test_pincture_create(self):
         pic = self.wallhaven.create_picture(632744)
-        self.assertEqual(pic.url, 'https://alpha.wallhaven.cc/wallpaper/632744')
         self.assertEqual(pic.origin_url, 'https://wallpapers.wallhaven.cc/wallpapers/full/wallhaven-632744.jpg')
         self.assertEqual(pic.alt, 'General 4096x2304 landscape horizon clouds sunrise mountain top Switzerland Saentis Mountain mountains sun rays sky HDR')
         self.assertTupleEqual(pic.resolution, (4096, 2304))
@@ -167,11 +115,11 @@ class PictureTest(unittest.TestCase):
 
     def test_get_main_web_picture(self):
         for p in self.wallhaven.get_main_web_pictures():
-            print(p.alt)
+            print(p)
 
     def test_get_latest_web_picture(self):
         for p in self.wallhaven.get_category_picture(Category.LATEST):
-            print(p.alt)
+            print(p)
 
 
 if __name__ == '__main__':

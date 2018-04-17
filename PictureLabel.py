@@ -1,11 +1,10 @@
-from WallHaven import Picture
 from PyQt5 import QtWidgets, QtCore, QtGui
 from WallHaven import WallHavenPicture
 
 
 class PictureLabel(QtWidgets.QLabel):
 
-    clicked = QtCore.pyqtSignal(WallHavenPicture)
+    clicked = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None, picture=None):
         super().__init__(parent)

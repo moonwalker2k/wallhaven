@@ -12,34 +12,28 @@ class PictureCacher:
 
     def __init__(self, max_size=64):
         self.max_size = max_size
-        self.storage = {}
-        self.storage_list = []
+        self.storage = OrderedDict()
 
-    def enqueue(self, id, pixmap, force=False):
-        if self.has_pixmap(id):
-            if force:
-                self.storage[id] = pixmap
-        elif len(self.storage_list) > self.max_size:
+    def enqueue(self, id, pixmap):
+        if (len(self.storage) == self.max_size) and not self.has_pixmap(id):
             self.dequeue()
-            self.storage_list.append(id)
-            self.storage[id] = pixmap
-        else:
-            self.storage_list.append(id)
-            self.storage[id] = pixmap
+        self.storage[id] = pixmap
 
     def dequeue(self):
-        if len(self.storage_list) > 0:
-            id = self.storage_list.pop(0)
-            del(self.storage[id])
+        if len(self.storage) > 0:
+            id, _ = self.storage.popitem(False)
+            print('pop id %s' % id)
 
     def get_pixmap(self, id):
-        return self.storage[id]
+        if self.has_pixmap(id):
+            old_pixmap = self.storage[id]
+            del self.storage[id]
+            self.storage[id] = old_pixmap
+            return old_pixmap
+        else:
+            return None
 
     def has_pixmap(self, id):
-        try:
-            self.storage_list.index(id)
-            return True
-        except ValueError:
-            return False
+        return id in self.storage
 
 

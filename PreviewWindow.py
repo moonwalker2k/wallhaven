@@ -18,7 +18,7 @@ setting = QtCore.QSettings('./setting.ini', QtCore.QSettings.IniFormat)
 class PreviewWindow(QtWidgets.QLabel):
 
     stop_loader_signal = QtCore.pyqtSignal()
-    load_picture_signal = QtCore.pyqtSignal(WallHavenPicture)
+    load_picture_signal = QtCore.pyqtSignal(str)
     download_picture_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -64,7 +64,7 @@ class PreviewWindow(QtWidgets.QLabel):
         self.download_button.clicked.connect(self.download_picture_slot)
 
     def load_picture(self, picture):
-        log.debug('load new picture id {}'.format(picture.id))
+        log.debug('load new picture id {}'.format(picture))
         self.picture = picture
         self.show()
         self.load_picture_signal.emit(picture)
@@ -80,11 +80,11 @@ class PreviewWindow(QtWidgets.QLabel):
 
     @QtCore.pyqtSlot()
     def download_picture_slot(self):
-        log.info('download picture:' + self.picture.id)
+        log.info('download picture:' + self.picture)
         self.download_picture_signal.emit(setting.value('download_path'))
 
     def mousePressEvent(self, a0: QtGui.QMouseEvent):
-        if a0.button()  == QtCore.Qt.LeftButton:
+        if a0.button() == QtCore.Qt.LeftButton:
             self.mouse_press_pos = a0.globalPos() - self.frameGeometry().topLeft()
             a0.ignore()
 
@@ -117,8 +117,7 @@ class PictureLoader(QtCore.QObject):
         self.thread().quit()
         self.thread().wait()
 
-
-    @QtCore.pyqtSlot(WallHavenPicture)
+    @QtCore.pyqtSlot(str)
     def load_picture(self, picture):
         self.mutex.lock()
         self.is_complete = False
@@ -128,14 +127,14 @@ class PictureLoader(QtCore.QObject):
         picture_data = bytearray()
         data_size = 0
         data_iter, total_size = self.wh.get_origin_data(picture)
-        log.debug('load picture {}, size {:.2f}KB'.format(picture.id, total_size / 1024))
+        log.debug('load picture {}, size {:.2f}KB'.format(picture, total_size / 1024))
         for block in data_iter:
             picture_data += block
             data_size += len(block)
             if self.is_stopped():
                 break
             progress = 100.0 * data_size / total_size
-            log.debug('load picture {} in {:.1f}%'.format(picture.id, progress))
+            log.debug('load picture {} in {:.1f}%'.format(picture, progress))
             if progress == 100.0:
                 self.is_complete = True
             self.progress_signal.emit(progress)
@@ -146,11 +145,8 @@ class PictureLoader(QtCore.QObject):
 
     @QtCore.pyqtSlot(str)
     def download_picture(self, path):
-        if self.picture.origin_url:
-            filename = self.picture.origin_url[self.picture.origin_url.rfind('/') + 1:]
-        else:
-            origin_url, = self.wh.get_picture_info(self.picture.id)
-            filename = origin_url[origin_url.rfind('/') + 1:]
+        origin_url, _ = self.wh.get_picture_info(self.picture)
+        filename = origin_url[origin_url.rfind('/') + 1:]
         log.info('old path' + path)
         path = os.path.join(path, filename)
         log.info('start download picture, path:' + path)
