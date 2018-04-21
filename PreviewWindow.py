@@ -4,6 +4,7 @@ import pathlib
 from WallHaven import WallHaven
 from PyQt5 import QtWidgets, QtCore, QtGui
 from WallHaven import WallHavenPicture
+from Setting import setting
 
 log = logging.getLogger('PreviewWindowLog')
 log.setLevel(logging.DEBUG)
@@ -11,8 +12,6 @@ console_handler = logging.StreamHandler(sys.stdout)
 formatter = logging.Formatter('%(asctime)s %(levelname)-4s: %(message)s')
 console_handler.setFormatter(formatter)
 log.addHandler(console_handler)
-
-setting = QtCore.QSettings('./setting.ini', QtCore.QSettings.IniFormat)
 
 
 class PreviewWindow(QtWidgets.QLabel):

@@ -6,7 +6,7 @@ QtCore.QCoreApplication.setOrganizationName('moonwalker')
 QtCore.QCoreApplication.setOrganizationDomain('moonwalker.me')
 QtCore.QCoreApplication.setApplicationName('WallHeaven')
 
-setting = QtCore.QSettings('./setting.ini', QtCore.QSettings.IniFormat)
+setting = QtCore.QSettings(str(pathlib.Path.cwd().joinpath('setting.ini')), QtCore.QSettings.IniFormat)
 
 
 class SettingDialog(QtWidgets.QDialog):
@@ -21,6 +21,7 @@ class SettingDialog(QtWidgets.QDialog):
         self.download_path_edit = QtWidgets.QLineEdit()
         if not setting.value('download_path'):
             self.download_path = str(Path(pathlib.PurePath(pathlib.Path.home(), 'Pictures', 'WallHaven')))
+            setting.setValue('download_path', self.download_path)
         else:
             self.download_path = setting.value('download_path')
         self.init_file_setting_tab()
