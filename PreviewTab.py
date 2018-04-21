@@ -1,7 +1,7 @@
 import logging, sys
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtGui import QPixmap
-from WallHaven import WallHavenPicture, WallHaven, Category
+from WallHaven import WallHaven, Category
 from PreviewWindow import PreviewWindow
 from PictureCacher import PictureCacher
 from PictureLabel import PictureLabel
@@ -94,6 +94,7 @@ class PreviewTab(QtWidgets.QWidget):
             label.setContentsMargins(0,0,0,0)
             label.clicked.connect(self.clicked_for_preview_slot)
             self.layout().addWidget(label, int(i / 4), i % 4)
+            self.layout()
 
     def update_tab(self, page=1):
         self.updater.stop_update()
@@ -165,9 +166,10 @@ class TabUpdater(QtCore.QObject):
                 self.mutex.unlock()
                 break
             self.mutex.unlock()
-            if self.cache.has_pixmap(pic):
+            pixmap = self.cache.get_pixmap(pic)
+            if pixmap:
                 log.debug('load from cache, id:' + pic)
-                self.pixmap = self.cache.get_pixmap(pic)
+                self.pixmap = pixmap
             else:
                 self.pixmap.loadFromData(self.wh.get_preview_data(pic))
                 self.cache.enqueue(pic, self.pixmap.copy())

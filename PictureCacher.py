@@ -1,39 +1,23 @@
-from PyQt5 import QtCore, QtWidgets,QtGui
-from queue import LifoQueue
-from collections import OrderedDict
+from PyQt5 import QtCore, QtWidgets, QtGui
 
 
 class PictureCacher:
-    '''
+    """
     PictureCacher
     图片缓存类
-    将图片临时保存于内存和硬盘中，增加加载速度
-    '''
+    将图片临时保存于内存中，增加加载速度
+    """
 
-    def __init__(self, max_size=64):
+    def __init__(self, max_size=100):
         self.max_size = max_size
-        self.storage = OrderedDict()
+        QtGui.QPixmapCache.setCacheLimit(max_size * 1024)
 
     def enqueue(self, id, pixmap):
-        if (len(self.storage) == self.max_size) and not self.has_pixmap(id):
-            self.dequeue()
-        self.storage[id] = pixmap
-
-    def dequeue(self):
-        if len(self.storage) > 0:
-            id, _ = self.storage.popitem(False)
-            print('pop id %s' % id)
+        return QtGui.QPixmapCache.insert(id, pixmap)
 
     def get_pixmap(self, id):
-        if self.has_pixmap(id):
-            old_pixmap = self.storage[id]
-            del self.storage[id]
-            self.storage[id] = old_pixmap
-            return old_pixmap
+        result = QtGui.QPixmapCache.find(id)
+        if result:
+            return result
         else:
             return None
-
-    def has_pixmap(self, id):
-        return id in self.storage
-
-
