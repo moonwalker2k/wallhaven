@@ -63,11 +63,10 @@ class MainGui(QWidget):
         self.top_layout.addWidget(self.page_edit)
         self.top_layout.addWidget(self.next_page_button)
         self.top_layout.addWidget(self.setting_button)
-        self.top_layout.setSpacing(5)
+        self.top_layout.setContentsMargins(10, 0, 10, 0)
         self.center_layout.addWidget(self.preview_tabs)
         self.layout().addLayout(self.top_layout)
         self.layout().addLayout(self.center_layout)
-        self.setMinimumSize(1300, 900)
 
     def init_preview_tabs(self):
         self.preview_tabs.currentChanged.connect(self.tab_change_slot)

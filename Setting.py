@@ -20,7 +20,7 @@ class SettingDialog(QtWidgets.QDialog):
         self.change_download_path_button = QtWidgets.QPushButton()
         self.download_path_edit = QtWidgets.QLineEdit()
         if not setting.value('download_path'):
-            self.download_path = str(Path(pathlib.PurePath(pathlib.Path.home(), 'Picture', 'WallHaven')))
+            self.download_path = str(Path(pathlib.PurePath(pathlib.Path.home(), 'Pictures', 'WallHaven')))
         else:
             self.download_path = setting.value('download_path')
         self.init_file_setting_tab()

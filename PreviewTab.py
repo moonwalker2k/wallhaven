@@ -34,21 +34,28 @@ class PreviewTabs(QtWidgets.QTabWidget):
 
         self.preview_window = PreviewWindow()
 
+        self.init_ui()
         self.init_all_tabs()
         self.init_preview_window()
         self.update_all_tabs()
 
+    def init_ui(self):
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Preferred)
+
     def init_all_tabs(self):
         for tab, category in zip(self.all_tabs, Category):
             assert isinstance(tab, PreviewTab)
-            tab.setStyleSheet('PictureLabel '
-                              '{background-color: gray;'
-                              'border-width: 2px;'
-                              'border-radius: 7px;'
-                              '}')
             tab.clicked_for_preview_signal.connect(self.preview_clicked_slot)
             scroll_area = QtWidgets.QScrollArea()
             scroll_area.setWidget(tab)
+            scroll_area.setAutoFillBackground(True)
+            scroll_area.setContentsMargins(0, 0, 0, 0)
+            scroll_area.setFrameStyle(QtWidgets.QFrame.NoFrame or QtWidgets.QFrame.Plain)
+            scroll_area.setMinimumWidth(tab.sizeHint().width())
+            scroll_area.setMinimumHeight(int(tab.sizeHint().height() * 6 / 10))
+            scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+            scroll_area.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
             scroll_area.setWidgetResizable(True)
             self.addTab(scroll_area, category.value)
 
@@ -83,18 +90,20 @@ class PreviewTab(QtWidgets.QWidget):
     def init_ui(self, num):
         self.setLayout(QtWidgets.QGridLayout())
         self.add_label_to_tab(num)
+        self.setStyleSheet('PreviewLabel'
+                           '{background-color: blue;'
+                           'border-width: 2px;'
+                           'border-radius: 4px;'
+                           '}')
+        self.layout().setSpacing(1)
         self.updater.updated_one_picture_signal.connect(self.update_tab_slot)
 
     def add_label_to_tab(self, num):
         for i in range(num):
             label = PictureLabel()
-            # label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored)
             label.setFixedSize(300, 200)
-            label.setMargin(0)
-            label.setContentsMargins(0,0,0,0)
             label.clicked.connect(self.clicked_for_preview_slot)
             self.layout().addWidget(label, int(i / 4), i % 4)
-            self.layout()
 
     def update_tab(self, page=1):
         self.updater.stop_update()

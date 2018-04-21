@@ -67,7 +67,7 @@ class WallHaven:
         else:
             origin_url, alt = self.get_picture_info(id_or_pic)
         rsp = self.session.get(origin_url, stream=True)
-        return rsp.iter_content(1024 * 128), int(rsp.headers['Content-Length'])
+        return rsp.iter_content(1024 * 256), int(rsp.headers['Content-Length'])
 
     def create_picture(self, id):
         origin_url, alt = self.get_picture_info(id)
@@ -107,6 +107,7 @@ class PictureTest(unittest.TestCase):
         self.assertEqual(pic.origin_url, 'https://wallpapers.wallhaven.cc/wallpapers/full/wallhaven-632744.jpg')
         self.assertEqual(pic.alt, 'General 4096x2304 landscape horizon clouds sunrise mountain top Switzerland Saentis Mountain mountains sun rays sky HDR')
         self.assertTupleEqual(pic.resolution, (4096, 2304))
+        self.assertEqual('X'.join([str(s) for s in pic.resolution]), '4096X2304')
 
     def test_picture_download(self):
         print('test picture_download')
