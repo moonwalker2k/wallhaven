@@ -81,6 +81,7 @@ class MainGui(QWidget):
     def next_page_slot(self):
         current_tab = self.preview_tabs.currentWidget().widget()
         current_tab.update_next_page()
+
         self.page_edit.setText(str(current_tab.current_page()))
 
     @QtCore.pyqtSlot()
@@ -90,6 +91,7 @@ class MainGui(QWidget):
 
 
 if __name__ == '__main__':
+    # QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
     gui = MainGui()
     sys.exit(app.exec_())

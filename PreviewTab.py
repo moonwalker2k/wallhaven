@@ -1,7 +1,9 @@
 import logging, sys
+from concurrent import futures
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtGui import QPixmap
 from WallHaven import WallHaven, Category
+from WallHaven_aiohttp import WallhavenAiohttp
 from PreviewWindow import PreviewWindow
 from PictureCacher import PictureCacher
 from PictureLabel import PictureLabel
@@ -47,6 +49,7 @@ class PreviewTabs(QtWidgets.QTabWidget):
             assert isinstance(tab, PreviewTab)
             tab.clicked_for_preview_signal.connect(self.preview_clicked_slot)
             scroll_area = QtWidgets.QScrollArea()
+            tab.setParent(scroll_area)
             scroll_area.setWidget(tab)
             scroll_area.setAutoFillBackground(True)
             scroll_area.setContentsMargins(0, 0, 0, 0)
@@ -146,7 +149,6 @@ class TabUpdater(QtCore.QObject):
 
     def __init__(self, wh=WallHaven()):
         super().__init__()
-        self.wh = wh
         self.cache = PictureCacher()
         self.pixmap = QtGui.QPixmap()
         self.is_running = False
@@ -156,13 +158,33 @@ class TabUpdater(QtCore.QObject):
         # self.thread.finished.connect(self.deleteLater)
         self.moveToThread(self.thread)
         self.thread.start()
+        self.wh = wh
 
     def __del__(self):
         self.thread.quit()
         self.thread.wait()
 
     @QtCore.pyqtSlot(Category, int)
-    def update_tab_slot(self, category, page=1):
+    def update_tab_slot(self, category: Category, page: int=1):
+        if category == Category.MAIN:
+            picture_iter = self.wh.get_main_web_pictures()
+        else:
+            picture_iter = self.wh.get_category_picture(category, page)
+        count = 0
+        log.info('updater restart')
+        # pic_list = [pic for pic in picture_iter if not self.cache.get_pixmap(pic)]
+        with futures.ThreadPoolExecutor(3) as executor:
+            to_do_map = {}
+            for pic in picture_iter:
+                future = executor.submit(self.wh.get_preview_data, pic)
+                to_do_map[future] = pic
+            for future in futures.as_completed(to_do_map):
+                self.pixmap.loadFromData(future.result())
+                self.updated_one_picture_signal.emit(to_do_map[future], count, self.pixmap)
+                log.debug('update tab:{} picture:{}'.format(category.value, to_do_map[future]))
+                count += 1
+
+    def update_tab_slot_old(self, category, page=1):
         if category == Category.MAIN:
             picture_iter = self.wh.get_main_web_pictures()
         else:
@@ -180,6 +202,7 @@ class TabUpdater(QtCore.QObject):
                 log.debug('load from cache, id:' + pic)
                 self.pixmap = pixmap
             else:
+
                 self.pixmap.loadFromData(self.wh.get_preview_data(pic))
                 self.cache.enqueue(pic, self.pixmap.copy())
                 log.debug('update tab:{} picture:{}'.format(category.value, pic))

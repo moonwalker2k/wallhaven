@@ -1,4 +1,5 @@
 import sys, os
+import io
 import logging
 import pathlib
 from WallHaven import WallHaven
@@ -181,15 +182,16 @@ class PictureLoader(QtCore.QObject):
         self.mutex.unlock()
         self.picture = picture
         data_picture = self.wh.create_picture(picture)
-        picture_data = bytearray()
-        data_size = 0
         data_iter, total_size = self.wh.get_origin_data(data_picture)
         resolution = 'X'.join([str(s) for s in data_picture.resolution])
         self.load_part_complete_signal.emit(QtGui.QPixmap(), resolution, total_size, 0)
+        print('debug')
+        picture_data = io.BufferedRandom(io.BytesIO(bytearray(total_size)))
         log.debug('resolution:%s' % resolution)
         log.debug('load picture {}, size {:.2f}KB'.format(picture, total_size / 1024))
+        data_size = 0
         for block in data_iter:
-            picture_data += block
+            picture_data.write(block)
             data_size += len(block)
             if self.is_stopped():
                 break
@@ -197,7 +199,9 @@ class PictureLoader(QtCore.QObject):
             log.debug('load picture {} in {:.1f}%'.format(picture, progress))
             if progress == 100.0:
                 self.is_complete = True
-            self.pixmap.loadFromData(picture_data)
+            picture_data.seek(0)
+            self.pixmap.loadFromData(picture_data.read())
+            picture_data.seek(data_size)
             pixmap = self.pixmap.scaled(self.preview_windows_size, QtCore.Qt.KeepAspectRatioByExpanding,
                                              QtCore.Qt.SmoothTransformation)
             self.load_part_complete_signal.emit(pixmap, resolution, total_size, progress)
